@@ -8,6 +8,7 @@ import os
 
 app = Flask(__name__)
 GOOGLE_MAPS_API_KEY = os.environ.get('GOOGLE_MAPS_API_KEY', 'AIzaSyALbCCPqlurlk8Std1nDdBHukPK_FV4Kdw')
+BACKEND_BASE_URL = os.environ.get('BACKEND_BASE_URL', 'https://pbl-daa-1-1.onrender.com').rstrip('/')
 
 # Use DATABASE_URL env var for production-quality DB (MySQL/PostgreSQL), fallback example:
 # mysql+pymysql://username:password@localhost:3306/bookings_db
@@ -19,6 +20,15 @@ app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get(
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
+
+
+@app.after_request
+def add_cors_headers(response):
+    """Allow frontend clients from other origins to call API endpoints."""
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+    return response
 
 
 class Booking(db.Model):
@@ -375,7 +385,7 @@ def a_star(graph, start, end, coordinates):
 
 @app.route('/')
 def home():
-    return render_template('home.html', regions=REGIONS)
+    return render_template('home.html', regions=REGIONS, backend_base_url=BACKEND_BASE_URL)
 
 @app.route('/route/<region>')
 def route_finder(region):
@@ -390,7 +400,8 @@ def route_finder(region):
                          stops=stops,
                          regions=REGIONS,
                          region_name=REGIONS[region]['name'],
-                         google_maps_api_key=GOOGLE_MAPS_API_KEY)
+                         google_maps_api_key=GOOGLE_MAPS_API_KEY,
+                         backend_base_url=BACKEND_BASE_URL)
 
 @app.route('/api/find-route', methods=['POST'])
 def api_find_route():
@@ -582,7 +593,8 @@ def network(region):
                          stops=stops,
                          regions=REGIONS,
                          region_name=REGIONS[region]['name'],
-                         route_data=route_data)
+                         route_data=route_data,
+                         backend_base_url=BACKEND_BASE_URL)
 
 if __name__ == '__main__':
     app.run(debug=True)
