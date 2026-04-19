@@ -30,6 +30,11 @@ def add_cors_headers(response):
     response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
     return response
 
+@app.route('/api/<path:route>', methods=['OPTIONS'])
+def handle_options(route):
+    """Handle CORS preflight requests"""
+    return '', 204
+
 
 class Booking(db.Model):
     __tablename__ = 'bookings'
@@ -595,6 +600,43 @@ def network(region):
                          region_name=REGIONS[region]['name'],
                          route_data=route_data,
                          backend_base_url=BACKEND_BASE_URL)
+
+@app.route('/api/get-stops', methods=['POST'])
+def api_get_stops():
+    """API endpoint to get all stops for a region"""
+    data = request.json
+    region = data.get('region', 'Uttarakhand')
+    
+    if region not in REGIONS:
+        return jsonify({'error': 'Invalid region'}), 400
+    
+    graph, _ = build_region_graph(region)
+    stops = sorted(list(graph.keys()))
+    
+    return jsonify({'stops': stops})
+
+@app.route('/api/get-network', methods=['POST'])
+def api_get_network():
+    """API endpoint to get network data (coordinates and graph) for a region"""
+    data = request.json
+    region = data.get('region', 'Uttarakhand')
+    
+    if region not in REGIONS:
+        return jsonify({'error': 'Invalid region'}), 400
+    
+    graph, coordinates = build_region_graph(region)
+    
+    # Convert coordinates dict to JSON-serializable format
+    coordinates_serialized = {stop: list(coords) for stop, coords in coordinates.items()}
+    
+    # Convert graph dict (with tuples) to JSON-serializable format
+    graph_serialized = {stop: [[neighbor, dist] for neighbor, dist in connections] 
+                       for stop, connections in graph.items()}
+    
+    return jsonify({
+        'coordinates': coordinates_serialized,
+        'graph': graph_serialized
+    })
 
 if __name__ == '__main__':
     app.run(debug=True)
