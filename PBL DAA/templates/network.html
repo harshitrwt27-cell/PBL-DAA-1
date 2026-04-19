@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{% if route_data %}Route Map{% else %}Bus Network{% endif %} - {{ region_name }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/x-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚍</text></svg>">
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</head>
+<body>
+    <div class="container">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <div>
+                <h1>{% if route_data %}🗺️ Route Map{% else %}🗺️ Bus Network Map{% endif %}</h1>
+                <p class="subtitle">{{ region_name }}</p>
+            </div>
+            <a href="/" class="region-button" style="margin: 0;">← Change Region</a>
+        </div>
+
+        <nav>
+            <a href="/route/{{ region }}">Route Finder</a>
+            <a href="/network/{{ region }}">Network Map</a>
+        </nav>
+
+        {% if route_data %}
+        <!-- Route Result -->
+        <div class="result" style="margin: 20px 0;">
+            <h2>✅ Optimal Route Found!</h2>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+                <div>
+                    <p><strong>Algorithm:</strong> {{ route_data.algorithm|title }}</p>
+                    <p><strong>Total Distance:</strong> {{ route_data.distance }} km</p>
+                    <p><strong>Bus Stops:</strong> {{ route_data.stops }}</p>
+                </div>
+                <div>
+                    <p><strong>Estimated Time:</strong> {{ route_data.time }} hours</p>
+                    <p><strong>Average Speed:</strong> 40 km/h</p>
+                </div>
+            </div>
+            <p><strong>Route Path:</strong></p>
+            <div style="background: rgba(102, 126, 234, 0.1); padding: 15px; border-radius: 8px; margin: 10px 0;">
+                {% for stop in route_data.path %}
+                <span style="display: inline-block; background: #667eea; color: white; padding: 5px 10px; margin: 2px; border-radius: 15px; font-size: 0.9em;">{{ stop }}</span>
+                {% if not loop.last %}<span style="color: #667eea; margin: 0 5px;">→</span>{% endif %}
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Leaflet Interactive Map -->
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+            <h3 style="color: white; margin: 0;">Interactive Route and Network Map</h3>
+            <span id="mapDistance" style="color: white; font-weight: 600;"></span>
+        </div>
+        <div id="map" style="height: 600px; margin: 20px 0; border-radius: 15px; box-shadow: 0 8px 32px rgba(0,0,0,0.2);"></div>
+
+        <!-- Network Details -->
+        <h2 style="color: white; margin-top: 40px; text-align: center;">📍 Bus Stop Details</h2>
+        <div class="network-grid">
+        {% for stop_name, connections in graph.items() %}
+            <div class="stop-card">
+                <h3>{{ stop_name }}</h3>
+                <p><strong>Connections:</strong> {{ connections|length }}</p>
+                <div style="max-height: 150px; overflow-y: auto;">
+                <ul style="font-size: 0.9em;">
+                {% for neighbor, distance in connections %}
+                    <li><strong>{{ neighbor }}</strong><br>{{ "%.1f"|format(distance) }} km</li>
+                {% endfor %}
+                </ul>
+                </div>
+            </div>
+        {% endfor %}
+        </div>
+    </div>
+
+    <script>
+    const region = "{{ region }}";
+    const coordinates = {{ coordinates|tojson }};
+    const graph = {{ graph|tojson }};
+    const routeData = {% if route_data %}{{ route_data|tojson }}{% else %}null{% endif %};
+
+    let map;
+    let markers = [];
+    let routeLayer;
+
+    // Initialize map
+    function initMap() {
+        // Calculate center of all coordinates
+        let centerLat = 0, centerLng = 0;
+        let count = 0;
+        Object.values(coordinates).forEach(coords => {
+            centerLat += coords[0];
+            centerLng += coords[1];
+            count++;
+        });
+        centerLat /= count;
+        centerLng /= count;
+
+        // Initialize map
+        map = L.map('map').setView([centerLat, centerLng], 8);
+
+        // Add OpenStreetMap tiles
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors',
+            maxZoom: 18,
+        }).addTo(map);
+
+        // Add bus stop markers
+        addBusStopMarkers();
+
+        // Draw route if route data exists
+        if (routeData) {
+            drawRoute(routeData.path);
+            document.getElementById('mapDistance').innerText = `Route distance: ${routeData.distance} km, ${routeData.time} h`;
+        }
+    }
+
+    function addBusStopMarkers() {
+        Object.entries(coordinates).forEach(([stopName, coords]) => {
+            const marker = L.marker([coords[0], coords[1]])
+                .addTo(map)
+                .bindPopup(`<b>${stopName}</b><br>Bus Stop`)
+                .bindTooltip(stopName, {permanent: false, direction: 'top'});
+
+            markers.push(marker);
+        });
+
+        // Fit map to show all markers if no route
+        if (!routeData && markers.length > 0) {
+            const group = new L.featureGroup(markers);
+            map.fitBounds(group.getBounds(), {padding: [20, 20]});
+        }
+    }
+
+    // Draw route on map
+    function drawRoute(path) {
+        // Clear previous route
+        if (routeLayer) {
+            map.removeLayer(routeLayer);
+        }
+
+        if (!path || path.length < 2) return;
+
+        const routeCoords = path.map(stop => coordinates[stop]);
+        routeLayer = L.polyline(routeCoords, {
+            color: '#667eea',
+            weight: 4,
+            opacity: 0.8
+        }).addTo(map);
+
+        // Fit map to route
+        map.fitBounds(routeLayer.getBounds(), {padding: [20, 20]});
+
+        // Add start and end markers
+        const startIcon = L.divIcon({
+            html: '<div style="background: #4CAF50; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.3);"></div>',
+            className: 'custom-marker',
+            iconSize: [20, 20]
+        });
+
+        const endIcon = L.divIcon({
+            html: '<div style="background: #f44336; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.3);"></div>',
+            className: 'custom-marker',
+            iconSize: [20, 20]
+        });
+
+        L.marker(routeCoords[0], {icon: startIcon})
+            .addTo(map)
+            .bindPopup('<b>START</b><br>' + path[0]);
+
+        L.marker(routeCoords[routeCoords.length - 1], {icon: endIcon})
+            .addTo(map)
+            .bindPopup('<b>END</b><br>' + path[path.length - 1]);
+    }
+
+    // Initialize map when page loads
+    document.addEventListener('DOMContentLoaded', function() {
+        if (document.getElementById('map')) {
+            initMap();
+        }
+    });
+    </script>
+
+    <style>
+    .stop-card {
+        background: rgba(255,255,255,0.95);
+        backdrop-filter: blur(10px);
+        padding: 20px;
+        border-radius: 15px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        border: 1px solid rgba(255,255,255,0.2);
+        transition: transform 0.3s ease;
+    }
+
+    .stop-card:hover {
+        transform: translateY(-5px);
+    }
+
+    .stop-card h3 {
+        color: #667eea;
+        margin-bottom: 10px;
+        word-break: break-word;
+    }
+
+    .stop-card ul {
+        list-style: none;
+        padding: 0;
+    }
+
+    .stop-card li {
+        padding: 5px 0;
+        border-bottom: 1px solid #eee;
+        color: #666;
+    }
+
+    .stop-card li:last-child {
+        border-bottom: none;
+    }
+    </style>
+</body>
+</html>

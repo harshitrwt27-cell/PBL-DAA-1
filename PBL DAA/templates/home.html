@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bus Route Optimizer - Select Region</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/x-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚍</text></svg>">
+</head>
+<body>
+    <div class="container">
+        <h1>🚍 Bus Route Optimizer</h1>
+        <p class="subtitle">Select Your Region</p>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 30px; margin-top: 40px; max-width: 800px; margin-left: auto; margin-right: auto;">
+            {% for region_key, region_data in regions.items() %}
+            <div class="region-card">
+                <div class="region-icon">
+                    {% if 'Uttarakhand' in region_data.name %}
+                    ⛰️
+                    {% else %}
+                    🗺️
+                    {% endif %}
+                </div>
+                <h2>{{ region_data.name }}</h2>
+                
+                <div class="region-info">
+                    {% set network = region_data.network %}
+                    <p><strong>Cities:</strong> {{ network|length }}</p>
+                    <p><strong>Coverage:</strong> 
+                        {% if 'Uttarakhand' in region_data.name %}
+                        Hilly Regions
+                        {% else %}
+                        All India
+                        {% endif %}
+                    </p>
+                </div>
+
+                <div style="margin-top: 20px;">
+                    <a href="/route/{{ region_key }}" class="region-button">Find Route</a>
+                    <a href="/network/{{ region_key }}" class="region-button secondary">View Network</a>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <div style="margin-top: 60px; text-align: center; color: rgba(255,255,255,0.7); font-size: 0.95em;">
+            <p>💡 Tip: Use the Dijkstra or A* algorithm to find the shortest path between cities and bus stops</p>
+        </div>
+    </div>
+
+    <style>
+    .region-card {
+        background: rgba(255,255,255,0.95);
+        backdrop-filter: blur(10px);
+        padding: 30px;
+        border-radius: 20px;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+        border: 1px solid rgba(255,255,255,0.2);
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+        text-align: center;
+    }
+
+    .region-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 12px 40px rgba(0,0,0,0.15);
+    }
+
+    .region-icon {
+        font-size: 3em;
+        margin-bottom: 15px;
+    }
+
+    .region-card h2 {
+        color: #333;
+        margin: 10px 0;
+        font-size: 1.5em;
+    }
+
+    .region-info {
+        background: #f8f9fa;
+        padding: 15px;
+        border-radius: 10px;
+        margin: 15px 0;
+    }
+
+    .region-info p {
+        margin: 8px 0;
+        color: #666;
+    }
+
+    .region-button {
+        display: inline-block;
+        padding: 12px 25px;
+        margin: 8px;
+        background: linear-gradient(45deg, #667eea, #764ba2);
+        color: white;
+        text-decoration: none;
+        border-radius: 8px;
+        transition: all 0.3s ease;
+        font-weight: 600;
+    }
+
+    .region-button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+    }
+
+    .region-button.secondary {
+        background: rgba(102, 126, 234, 0.2);
+        color: #667eea;
+        border: 1px solid #667eea;
+    }
+
+    .region-button.secondary:hover {
+        background: rgba(102, 126, 234, 0.3);
+    }
+    </style>
+</body>
+</html>
