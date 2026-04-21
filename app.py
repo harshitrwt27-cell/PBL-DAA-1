@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory, redirect, url_for
 from flask_sqlalchemy import SQLAlchemy
 import heapq
 import math
@@ -7,8 +7,8 @@ from datetime import datetime
 import os
 
 app = Flask(__name__)
-GOOGLE_MAPS_API_KEY = os.environ.get('GOOGLE_MAPS_API_KEY', 'AIzaSyALbCCPqlurlk8Std1nDdBHukPK_FV4Kdw')
-BACKEND_BASE_URL = os.environ.get('BACKEND_BASE_URL', 'https://pbl-daa-1-1.onrender.com').rstrip('/')
+FRONTEND_DIR = os.path.join(app.root_path, 'pbl-daa-frontend')
+FRONTEND_PUBLIC_DIR = os.path.join(FRONTEND_DIR, 'public')
 
 # Use DATABASE_URL env var for production-quality DB (MySQL/PostgreSQL), fallback example:
 # mysql+pymysql://username:password@localhost:3306/bookings_db
@@ -19,7 +19,8 @@ app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get(
 )
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-db = SQLAlchemy(app)
+db = SQLAlchemy()
+db.init_app(app)
 
 
 @app.after_request
@@ -53,9 +54,6 @@ class Booking(db.Model):
 def init_db():
     with app.app_context():
         db.create_all()
-
-
-init_db()
 
 # ============================================================================
 # MULTI-REGION BUS NETWORK DATA
@@ -388,25 +386,58 @@ def a_star(graph, start, end, coordinates):
 # FLASK ROUTES
 # ============================================================================
 
+def send_frontend_page(filename):
+    """Serve frontend page from pbl-daa-frontend directory."""
+    page_path = os.path.join(FRONTEND_DIR, filename)
+    if not os.path.exists(page_path):
+        return jsonify({'error': f'Missing frontend file: {filename}'}), 404
+    return send_from_directory(FRONTEND_DIR, filename)
+
 @app.route('/')
 def home():
-    return render_template('home.html', regions=REGIONS, backend_base_url=BACKEND_BASE_URL)
+    return send_frontend_page('index.html')
+
+@app.route('/index.html')
+def frontend_home():
+    return send_frontend_page('index.html')
+
+@app.route('/route.html')
+def frontend_route_finder():
+    return send_frontend_page('route.html')
+
+@app.route('/network.html')
+def frontend_network():
+    return send_frontend_page('network.html')
+
+@app.route('/public/<path:filename>')
+def frontend_public(filename):
+    return send_from_directory(FRONTEND_PUBLIC_DIR, filename)
+
+@app.route('/route')
+def route_root():
+    redirect_params = {}
+    backend = request.args.get('backend')
+    if backend:
+        redirect_params['backend'] = backend
+    return redirect(url_for('frontend_route_finder', **redirect_params))
+
+@app.route('/network')
+def network_root():
+    redirect_params = {}
+    backend = request.args.get('backend')
+    if backend:
+        redirect_params['backend'] = backend
+    return redirect(url_for('frontend_network', **redirect_params))
 
 @app.route('/route/<region>')
 def route_finder(region):
     if region not in REGIONS:
         region = 'Uttarakhand'
-    
-    graph, coordinates = build_region_graph(region)
-    stops = sorted(list(graph.keys()))
-    
-    return render_template('route.html', 
-                         region=region,
-                         stops=stops,
-                         regions=REGIONS,
-                         region_name=REGIONS[region]['name'],
-                         google_maps_api_key=GOOGLE_MAPS_API_KEY,
-                         backend_base_url=BACKEND_BASE_URL)
+    redirect_params = {'region': region}
+    backend = request.args.get('backend')
+    if backend:
+        redirect_params['backend'] = backend
+    return redirect(url_for('frontend_route_finder', **redirect_params))
 
 @app.route('/api/find-route', methods=['POST'])
 def api_find_route():
@@ -563,43 +594,11 @@ def api_book_route():
 def network(region):
     if region not in REGIONS:
         region = 'Uttarakhand'
-    
-    graph, coordinates = build_region_graph(region)
-    stops = sorted(list(graph.keys()))
-    
-    # Check for route parameters
-    start = request.args.get('start')
-    end = request.args.get('end')
-    algorithm = request.args.get('algorithm', 'dijkstra')
-    
-    route_data = None
-    if start and end and start in graph and end in graph:
-        if algorithm == 'dijkstra':
-            distance, path = dijkstra(graph, start, end)
-        elif algorithm == 'a_star':
-            distance, path = a_star(graph, start, end, coordinates)
-        else:
-            distance, path = dijkstra(graph, start, end)
-        
-        if distance != float("inf"):
-            route_data = {
-                'distance': distance,
-                'path': path,
-                'stops': len(path),
-                'time': round(distance / 40, 1),
-                'algorithm': algorithm,
-                'coordinates': [[coordinates[stop][0], coordinates[stop][1]] for stop in path]
-            }
-    
-    return render_template('network.html',
-                         region=region,
-                         graph=graph,
-                         coordinates=coordinates,
-                         stops=stops,
-                         regions=REGIONS,
-                         region_name=REGIONS[region]['name'],
-                         route_data=route_data,
-                         backend_base_url=BACKEND_BASE_URL)
+    redirect_params = {'region': region}
+    backend = request.args.get('backend')
+    if backend:
+        redirect_params['backend'] = backend
+    return redirect(url_for('frontend_network', **redirect_params))
 
 @app.route('/api/get-stops', methods=['POST'])
 def api_get_stops():
@@ -638,5 +637,14 @@ def api_get_network():
         'graph': graph_serialized
     })
 
+@app.route('/api/health', methods=['GET'])
+def api_health():
+    """Simple health endpoint for frontend connectivity checks."""
+    return jsonify({
+        'status': 'ok',
+        'service': 'bus-route-optimizer-api'
+    })
+
 if __name__ == '__main__':
+    init_db()
     app.run(debug=True)
