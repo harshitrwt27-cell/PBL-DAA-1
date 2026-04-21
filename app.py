@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, request, jsonify, redirect
 from flask_sqlalchemy import SQLAlchemy
 import heapq
 import math
@@ -10,6 +10,7 @@ from urllib.parse import urlencode
 app = Flask(__name__)
 GOOGLE_MAPS_API_KEY = os.environ.get('GOOGLE_MAPS_API_KEY', 'AIzaSyALbCCPqlurlk8Std1nDdBHukPK_FV4Kdw')
 BACKEND_BASE_URL = os.environ.get('BACKEND_BASE_URL', 'https://pbl-daa-1-1.onrender.com').rstrip('/')
+FRONTEND_BASE_URL = os.environ.get('FRONTEND_BASE_URL', 'https://pbl-daa-frontend.onrender.com').rstrip('/')
 
 # Use DATABASE_URL env var for production-quality DB (MySQL/PostgreSQL), fallback example:
 # mysql+pymysql://username:password@localhost:3306/bookings_db
@@ -387,32 +388,16 @@ def a_star(graph, start, end, coordinates):
 # FLASK ROUTES
 # ============================================================================
 
-def send_frontend_page(filename):
-    """Serve frontend page from pbl-daa-frontend directory."""
-    page_path = os.path.join(FRONTEND_DIR, filename)
-    if not os.path.exists(page_path):
-        return jsonify({'error': f'Missing frontend file: {filename}'}), 404
-    return send_from_directory(FRONTEND_DIR, filename)
-
 @app.route('/')
 def home():
-    return render_template('home.html', regions=REGIONS, backend_base_url=BACKEND_BASE_URL)
+    return redirect(f"{FRONTEND_BASE_URL}/index")
 
 @app.route('/route/<region>')
 def route_finder(region):
     if region not in REGIONS:
         region = 'Uttarakhand'
-    
-    graph, coordinates = build_region_graph(region)
-    stops = sorted(list(graph.keys()))
-    
-    return render_template('route.html', 
-                         region=region,
-                         stops=stops,
-                         regions=REGIONS,
-                         region_name=REGIONS[region]['name'],
-                         google_maps_api_key=GOOGLE_MAPS_API_KEY,
-                         backend_base_url=BACKEND_BASE_URL)
+
+    return redirect(f"{FRONTEND_BASE_URL}/route?{urlencode({'region': region})}")
 
 @app.route('/api/find-route', methods=['POST'])
 def api_find_route():
@@ -569,43 +554,20 @@ def api_book_route():
 def network(region):
     if region not in REGIONS:
         region = 'Uttarakhand'
-    
-    graph, coordinates = build_region_graph(region)
-    stops = sorted(list(graph.keys()))
-    
-    # Check for route parameters
+
     start = request.args.get('start')
     end = request.args.get('end')
-    algorithm = request.args.get('algorithm', 'dijkstra')
-    
-    route_data = None
-    if start and end and start in graph and end in graph:
-        if algorithm == 'dijkstra':
-            distance, path = dijkstra(graph, start, end)
-        elif algorithm == 'a_star':
-            distance, path = a_star(graph, start, end, coordinates)
-        else:
-            distance, path = dijkstra(graph, start, end)
-        
-        if distance != float("inf"):
-            route_data = {
-                'distance': distance,
-                'path': path,
-                'stops': len(path),
-                'time': round(distance / 40, 1),
-                'algorithm': algorithm,
-                'coordinates': [[coordinates[stop][0], coordinates[stop][1]] for stop in path]
-            }
-    
-    return render_template('network.html',
-                         region=region,
-                         graph=graph,
-                         coordinates=coordinates,
-                         stops=stops,
-                         regions=REGIONS,
-                         region_name=REGIONS[region]['name'],
-                         route_data=route_data,
-                         backend_base_url=BACKEND_BASE_URL)
+    algorithm = request.args.get('algorithm')
+
+    query_params = {'region': region}
+    if start:
+        query_params['start'] = start
+    if end:
+        query_params['end'] = end
+    if algorithm:
+        query_params['algorithm'] = algorithm
+
+    return redirect(f"{FRONTEND_BASE_URL}/network?{urlencode(query_params)}")
 
 @app.route('/api/get-stops', methods=['POST'])
 def api_get_stops():
